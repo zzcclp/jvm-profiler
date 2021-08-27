@@ -14,14 +14,8 @@
  * limitations under the License.
  */
 
-package com.uber.profiling;
+package com.uber.profiling.profilers.asyncprofiler;
 
-public interface Profiler {
-    long getIntervalMillis();
-
-    void setReporter(Reporter reporter);
-
-    void profile();
-
-    default void close() {}
+public enum Actions {
+    start, stop, resume, list, version, status, check
 }

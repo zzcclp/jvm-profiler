@@ -178,6 +178,34 @@ public class ArgumentsTest {
                 new ClassAndMethod[]{new ClassAndMethod("package.c900", "m900"), new ClassAndMethod("package.c901", "m901")},
                 arguments.getDurationProfiling().toArray(new ClassAndMethod[2]));
     }
+
+    @Test
+    public void asyncProfilerArguments() {
+        Arguments arguments = Arguments.parseArgs("asyncProfilerLibPath=" +
+                "./__spark_libs__/libasyncProfiler.so," +
+                "asyncProfilerParams=event__cpu___collapsed___alluser," +
+                "asyncProfilerInterval=10000," +
+                "reporter=com.uber.profiling.ArgumentsTest$DummyReporter," +
+                "durationProfiling=a.bc.foo,metricInterval=123,appIdVariable=APP_ID1," +
+                "appIdRegex=app123,argumentProfiling=package1.class1.method1.1");
+        Assert.assertEquals(9, arguments.getRawArgValues().size());
+        Assert.assertFalse(arguments.isNoop());
+        Assert.assertEquals(DummyReporter.class, arguments.getReporter().getClass());
+        Assert.assertEquals(1, arguments.getDurationProfiling().size());
+        Assert.assertEquals(new ClassAndMethod("a.bc", "foo"), arguments.getDurationProfiling().get(0));
+        Assert.assertEquals(123, arguments.getMetricInterval());
+        Assert.assertEquals("APP_ID1", arguments.getAppIdVariable());
+        Assert.assertEquals("app123", arguments.getAppIdRegex());
+
+        Assert.assertEquals(1, arguments.getArgumentProfiling().size());
+        Assert.assertEquals(new ClassMethodArgument("package1.class1", "method1", 1), arguments.getArgumentProfiling().get(0));
+
+        Assert.assertEquals("./__spark_libs__/libasyncProfiler.so", arguments.getAsyncProfilerLibPath());
+        Assert.assertEquals("event=cpu,collapsed,alluser",
+                arguments.getAsyncProfilerParams());
+        Assert.assertEquals(10000,
+                arguments.getAsyncProfilerSamplingInterval());
+    }
     
     public static class DummyReporter implements Reporter {
         @Override

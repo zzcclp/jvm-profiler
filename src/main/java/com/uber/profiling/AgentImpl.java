@@ -26,6 +26,8 @@ import com.uber.profiling.profilers.ProcessInfoProfiler;
 import com.uber.profiling.profilers.StacktraceCollectorProfiler;
 import com.uber.profiling.profilers.StacktraceReporterProfiler;
 import com.uber.profiling.profilers.ThreadInfoProfiler;
+import com.uber.profiling.profilers.asyncprofiler.AsyncProfiler;
+import com.uber.profiling.profilers.asyncprofiler.AsyncStartProfiler;
 import com.uber.profiling.transformers.JavaAgentFileTransformer;
 import com.uber.profiling.transformers.MethodProfilerStaticProxy;
 import com.uber.profiling.util.AgentLogger;
@@ -237,6 +239,24 @@ public class AgentImpl {
 
             profilers.add(stacktraceCollectorProfiler);
             profilers.add(stacktraceReporterProfiler);
+        }
+
+        // add async profiler
+        if (arguments.getAsyncProfilerSamplingInterval() > 0) {
+            // init AsyncProfiler and load so file
+            AsyncProfiler.getInstance(arguments.getAsyncProfilerLibPath());
+            AsyncStartProfiler asyncStartProfiler = new AsyncStartProfiler(reporter);
+            asyncStartProfiler.setTag(tag);
+            asyncStartProfiler.setCluster(cluster);
+            asyncStartProfiler.setIntervalMillis(arguments.getAsyncProfilerSamplingInterval());
+            asyncStartProfiler.setProcessUuid(processUuid);
+            asyncStartProfiler.setAppId(appId);
+            asyncStartProfiler.setFlagMeasurement(arguments.getAppIdVariable());
+            asyncStartProfiler.setAsyncParams(arguments.getAsyncProfilerParams());
+
+            asyncStartProfiler.updateArguments(arguments.getRawArgValues());
+
+            profilers.add(asyncStartProfiler);
         }
 
         if (arguments.isIoProfiling()) {

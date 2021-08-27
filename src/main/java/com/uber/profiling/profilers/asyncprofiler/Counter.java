@@ -14,14 +14,12 @@
  * limitations under the License.
  */
 
-package com.uber.profiling;
+package com.uber.profiling.profilers.asyncprofiler;
 
-public interface Profiler {
-    long getIntervalMillis();
-
-    void setReporter(Reporter reporter);
-
-    void profile();
-
-    default void close() {}
+/**
+ * Which metrics to use when generating profile in collapsed stack traces format.
+ */
+public enum Counter {
+    SAMPLES,
+    TOTAL
 }

@@ -58,14 +58,16 @@ public class InfluxDBOutputReporter implements Reporter {
         // format metrics 
         logger.info("Profiler Name : " + profilerName);
         Map<String, Object> formattedMetrics = getFormattedMetrics(metrics);
-        for (Map.Entry<String, Object> entry : formattedMetrics.entrySet()) {
+        /* for (Map.Entry<String, Object> entry : formattedMetrics.entrySet()) {
             logger.info("Formatted Metric-Name = " + entry.getKey() + ", Metric-Value = " + entry.getValue());
-        }
+        } */
+        String processIdTag = metrics.containsKey("tag") ? (String)metrics.get("tag") :
+                (String)metrics.get("processUuid");
         // Point
         Point point = Point.measurement(profilerName)
                 .time(System.currentTimeMillis(), TimeUnit.MILLISECONDS)
                 .fields(formattedMetrics)
-                .tag("processUuid", (String)metrics.get("processUuid"))
+                .tag("processIdTag", processIdTag)
                 .build();
         // BatchPoints
         BatchPoints batchPoints = BatchPoints.database(database)
@@ -148,8 +150,10 @@ public class InfluxDBOutputReporter implements Reporter {
             this.influxDB = InfluxDBFactory.connect(url, username, password);
             // enable batch
             this.influxDB.enableBatch(BatchOptions.DEFAULTS);
+            // enable gzip
+            this.influxDB.enableGzip();
             // set log level
-            influxDB.setLogLevel(InfluxDB.LogLevel.BASIC);
+            influxDB.setLogLevel(InfluxDB.LogLevel.NONE);
         }
     }
 

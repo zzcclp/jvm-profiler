@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018 Uber Technologies, Inc.
+ * Copyright 2020 Andrei Pangin
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,14 +14,18 @@
  * limitations under the License.
  */
 
-package com.uber.profiling;
+package com.uber.profiling.flamegraph.jfr;
 
-public interface Profiler {
-    long getIntervalMillis();
+import java.util.Map;
 
-    void setReporter(Reporter reporter);
+class JfrField extends Element {
+    final String name;
+    final int type;
+    final boolean constantPool;
 
-    void profile();
-
-    default void close() {}
+    JfrField(Map<String, String> attributes) {
+        this.name = attributes.get("name");
+        this.type = Integer.parseInt(attributes.get("class"));
+        this.constantPool = "true".equals(attributes.get("constantPool"));
+    }
 }

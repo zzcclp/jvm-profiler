@@ -75,6 +75,21 @@ public class Arguments {
     private List<ClassAndMethod> durationProfiling = new ArrayList<>();
     private List<ClassMethodArgument> argumentProfiling = new ArrayList<>();
 
+    public final static String ARG_ASYNC_PROFILER_LIB_PATH = "asyncProfilerLibPath";
+    public final static String ARG_ASYNC_PROFILER_PARAMS = "asyncProfilerParams";
+    public final static String ARG_ASYNC_PROFILER_SAMPLING_INTERVAL =
+            "asyncProfilerInterval";
+    public final static String ARG_ASYNC_PROFILER_SEPARATOR1 = "___";
+    public final static String ARG_ASYNC_PROFILER_SEPARATOR2 = "__";
+
+    private String asyncProfilerLibPath;
+    private String asyncProfilerParams;
+    // sampling interval in ms
+    private long asyncProfilerSamplingInterval = 0;
+
+    public final static String ARG_ENABLED_OUTPUT_LOG = "enabledOutputLog";
+    private boolean enabledOutputLog = false;
+
     private Arguments(Map<String, List<String>> parsedArgs) {
         updateArguments(parsedArgs);
     }
@@ -93,7 +108,8 @@ public class Arguments {
         for (String argPair : args.split(",")) {
             String[] strs = argPair.split("=");
             if (strs.length != 2) {
-                throw new IllegalArgumentException("Arguments for the agent should be like: key1=value1,key2=value2");
+                throw new IllegalArgumentException("Arguments for the agent should be like: " +
+                    "key1=value1,key2=value2");
             }
 
             String key = strs[0].trim();
@@ -230,6 +246,37 @@ public class Arguments {
             ioProfiling = Boolean.parseBoolean(argValue);
             logger.info("Got argument value for ioProfiling: " + ioProfiling);
         }
+
+        argValue = ArgumentUtils.getArgumentSingleValue(parsedArgs, ARG_ASYNC_PROFILER_LIB_PATH);
+        if (ArgumentUtils.needToUpdateArg(argValue)) {
+            asyncProfilerLibPath = argValue;
+            logger.info("Got argument value for async profiler lib path: " +
+                    asyncProfilerLibPath);
+        }
+
+        argValue = ArgumentUtils.getArgumentSingleValue(
+                parsedArgs, ARG_ASYNC_PROFILER_SAMPLING_INTERVAL);
+        if (ArgumentUtils.needToUpdateArg(argValue)) {
+            asyncProfilerSamplingInterval = Long.valueOf(argValue);
+            logger.info("Got argument value for async profiler interval: " +
+                    asyncProfilerSamplingInterval);
+        }
+
+        argValue = ArgumentUtils.getArgumentSingleValue(parsedArgs, ARG_ASYNC_PROFILER_PARAMS);
+        if (ArgumentUtils.needToUpdateArg(argValue)) {
+            asyncProfilerParams = argValue.replaceAll(ARG_ASYNC_PROFILER_SEPARATOR1, ",")
+                    .replaceAll(ARG_ASYNC_PROFILER_SEPARATOR2, "=");
+            logger.info("Got argument value for async profiler params: " +
+                    asyncProfilerParams);
+        }
+
+        argValue = ArgumentUtils.getArgumentSingleValue(parsedArgs, ARG_ENABLED_OUTPUT_LOG);
+        if (ArgumentUtils.needToUpdateArg(argValue)) {
+            enabledOutputLog = Boolean.parseBoolean(argValue);
+            logger.info("Got argument value for enabled output log: " +
+                    enabledOutputLog);
+            AgentLogger.enabledOutputLog = enabledOutputLog;
+        }
     }
     
     public void runConfigProvider() {
@@ -353,4 +400,35 @@ public class Arguments {
         return ioProfiling;
     }
 
+    public String getAsyncProfilerLibPath() {
+        return asyncProfilerLibPath;
+    }
+
+    public void setAsyncProfilerLibPath(String asyncProfilerLibPath) {
+        this.asyncProfilerLibPath = asyncProfilerLibPath;
+    }
+
+    public String getAsyncProfilerParams() {
+        return asyncProfilerParams;
+    }
+
+    public void setAsyncProfilerParams(String asyncProfilerParams) {
+        this.asyncProfilerParams = asyncProfilerParams;
+    }
+
+    public long getAsyncProfilerSamplingInterval() {
+        return asyncProfilerSamplingInterval;
+    }
+
+    public void setAsyncProfilerSamplingInterval(long asyncProfilerSamplingInterval) {
+        this.asyncProfilerSamplingInterval = asyncProfilerSamplingInterval;
+    }
+
+    public boolean isEnabledOutputLog() {
+        return enabledOutputLog;
+    }
+
+    public void setEnabledOutputLog(boolean enabledOutputLog) {
+        this.enabledOutputLog = enabledOutputLog;
+    }
 }

@@ -45,6 +45,7 @@ public class ShutdownHookRunner implements Runnable {
                 logShutdownMessage("Running periodic profiler (last run): " + profiler);
                 profiler.profile();
                 logShutdownMessage("Ran periodic profiler (last run): " + profiler);
+                profiler.close();
             } catch (Throwable ex) {
                 logger.warn("Failed to run periodic profiler (last run): " + profiler, ex);
             }
@@ -72,8 +73,10 @@ public class ShutdownHookRunner implements Runnable {
                 ex.printStackTrace();
             }
         }
+
+        // new File(AsyncProfiler.getInstance().getCurrLibPath()).deleteOnExit();
     }
-    
+
     private void logShutdownMessage(String msg) {
         // Sometime spark log in console output seems not fully collected, thus log to error output as well to make sure
         // we capture this shutdown hook execution. This is to help debug some issue when shutdown hook seems not executed.

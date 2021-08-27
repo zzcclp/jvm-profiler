@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018 Uber Technologies, Inc.
+ * Copyright 2020 Andrei Pangin
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,14 +14,23 @@
  * limitations under the License.
  */
 
-package com.uber.profiling;
+package com.uber.profiling.flamegraph.jfr;
 
-public interface Profiler {
-    long getIntervalMillis();
+public class Sample implements Comparable<Sample> {
+    public final long time;
+    public final int tid;
+    public final int stackTraceId;
+    public final int threadState;
 
-    void setReporter(Reporter reporter);
+    public Sample(long time, int tid, int stackTraceId, int threadState) {
+        this.time = time;
+        this.tid = tid;
+        this.stackTraceId = stackTraceId;
+        this.threadState = threadState;
+    }
 
-    void profile();
-
-    default void close() {}
+    @Override
+    public int compareTo(Sample o) {
+        return Long.compare(time, o.time);
+    }
 }

@@ -21,6 +21,8 @@ import org.apache.commons.lang3.exception.ExceptionUtils;
 public class AgentLogger {
     private static boolean debug = false;
     private static ErrorLogReporter errorLogReporter;
+
+    public static boolean enabledOutputLog = false;
     
     private String prefix;
     
@@ -49,16 +51,22 @@ public class AgentLogger {
     }
 
     public void info(String msg) {
+        if (!enabledOutputLog) {
+            return;
+        }
         System.out.println(System.currentTimeMillis() + " " + prefix + msg);
     }
 
     public void debug(String msg) {
-        if (AgentLogger.debug) {
+        if (AgentLogger.debug && enabledOutputLog) {
             info(msg);
         }
     }
     
     public void warn(String msg) {
+        if (!enabledOutputLog) {
+            return;
+        }
         try {
             System.out.println("[WARNING] " + System.currentTimeMillis() + " " + prefix + msg);
 
@@ -71,6 +79,9 @@ public class AgentLogger {
     }
     
     public void warn(String msg, Throwable ex) {
+        if (!enabledOutputLog) {
+            return;
+        }
         try {
             System.out.println("[WARNING] " + System.currentTimeMillis() + " " + prefix + msg + " " + ExceptionUtils.getStackTrace(ex));
 

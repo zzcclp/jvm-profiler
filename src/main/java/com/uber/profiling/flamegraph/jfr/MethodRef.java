@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018 Uber Technologies, Inc.
+ * Copyright 2020 Andrei Pangin
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,14 +14,16 @@
  * limitations under the License.
  */
 
-package com.uber.profiling;
+package com.uber.profiling.flamegraph.jfr;
 
-public interface Profiler {
-    long getIntervalMillis();
+public class MethodRef {
+    public final long cls;
+    public final long name;
+    public final long sig;
 
-    void setReporter(Reporter reporter);
-
-    void profile();
-
-    default void close() {}
+    public MethodRef(long cls, long name, long sig) {
+        this.cls = cls;
+        this.name = name;
+        this.sig = sig;
+    }
 }
