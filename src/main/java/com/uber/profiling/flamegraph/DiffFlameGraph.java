@@ -25,53 +25,66 @@ import java.io.InputStreamReader;
 import java.io.PrintStream;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
+import java.text.DecimalFormat;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class FlameGraph {
+public class DiffFlameGraph {
     public String title = "Flame Graph";
     public boolean reverse;
     public double minwidth;
     public int skip;
     public String input;
+    public String diffInput;
     public String output;
     public boolean isUberData = false;
+    public String colorThreshold = "5.0";
 
     private final Frame root = new Frame();
     private int depth;
     private long mintotal;
 
-    public FlameGraph(String... args) {
+    private final Frame diffRoot = new Frame();
+    private int diffDepth;
+
+    private DecimalFormat decimalFormat = new DecimalFormat("#.##");
+
+    private Pattern pattern = Pattern.compile("^\\d+.*");
+    private Pattern lambdaPattern = Pattern.compile(".*\\d+.*");
+
+    public DiffFlameGraph(String... args) {
         for (int i = 0; i < args.length; i++) {
             String arg = args[i];
             if (!arg.startsWith("--") && !arg.isEmpty()) {
-                if (input == null) {
+                if (diffInput == null) {
+                    diffInput = arg;
+                } else if (input == null) {
                     input = arg;
                 } else {
                     output = arg;
                 }
             } else if (arg.equals("--title")) {
                 title = args[++i];
-            } else if (arg.equals("--reverse")) {
-                reverse = true;
             } else if (arg.equals("--minwidth")) {
                 minwidth = Double.parseDouble(args[++i]);
             } else if (arg.equals("--skip")) {
                 skip = Integer.parseInt(args[++i]);
             } else if (arg.equals("--uber")) {
                 isUberData = Boolean.parseBoolean(args[++i]);
+            } else if (arg.equals("--colorThreshold")) {
+                colorThreshold = args[++i];
             }
         }
     }
 
     public void parse() throws IOException {
-        parse(new InputStreamReader(new FileInputStream(input), StandardCharsets.UTF_8));
+        parse(new InputStreamReader(new FileInputStream(input), StandardCharsets.UTF_8), false);
+        parse(new InputStreamReader(new FileInputStream(diffInput), StandardCharsets.UTF_8), true);
     }
 
-    public void parse(Reader in) throws IOException {
-        Pattern pattern = Pattern.compile("^\\d+.*");
+    public void parse(Reader in, boolean isDiff) throws IOException {
         try (BufferedReader br = new BufferedReader(in)) {
             for (String line; (line = br.readLine()) != null; ) {
                 int space = line.lastIndexOf(' ');
@@ -95,9 +108,40 @@ public class FlameGraph {
                     trace = line.substring(timeSpace, space).trim().split(";");
                 }
                 long ticks = Long.parseLong(line.substring(space + 1));
-                addSample(trace, ticks);
+                // handle 'Lambda$451/2939238.apply'
+                int traceLength = trace.length;
+                for (int i = 0; i < traceLength; i++) {
+                    Matcher lambdaMatcher = lambdaPattern.matcher(trace[i]);
+                    if (lambdaMatcher.matches()) {
+                        trace[i] = trace[i].replaceAll("[\\d]+", "_");
+                    }
+                }
+                if (isDiff) {
+                    addDiffSample(trace, ticks);
+                } else {
+                    addSample(trace, ticks);
+                }
             }
         }
+    }
+
+    public void addDiffSample(String[] trace, long ticks) {
+        Frame frame = diffRoot;
+        if (reverse) {
+            for (int i = trace.length; --i >= skip; ) {
+                frame.total += ticks;
+                frame = frame.child(trace[i]);
+            }
+        } else {
+            for (int i = skip; i < trace.length; i++) {
+                frame.total += ticks;
+                frame = frame.child(trace[i]);
+            }
+        }
+        frame.total += ticks;
+        frame.self += ticks;
+
+        diffDepth = Math.max(diffDepth, trace.length);
     }
 
     public void addSample(String[] trace, long ticks) {
@@ -135,10 +179,11 @@ public class FlameGraph {
                 "{title}", title,
                 "{height}", (depth + 1) * 16,
                 "{depth}", depth + 1,
-                "{reverse}", reverse));
+                "{reverse}", reverse,
+                "{colorThreshold}", colorThreshold));
 
         mintotal = (long) (root.total * minwidth / 100);
-        printFrame(out, "all", root, 0, 0);
+        printFrame(out, "all", root, 0, 0, diffRoot);
 
         out.print(FOOTER);
     }
@@ -164,20 +209,31 @@ public class FlameGraph {
         return result.toString();
     }
 
-    private void printFrame(PrintStream out, String title, Frame frame, int level, long x) {
+    private void printFrame(PrintStream out, String title, Frame frame, int level, long x,
+                            Frame diffFrame) {
         int type = frameType(title);
         title = stripSuffix(title);
         if (title.indexOf('\'') >= 0) {
             title = title.replace("'", "\\'");
         }
 
-        out.println("f(" + level + "," + x + "," + frame.total + "," + type + ",'" + title + "')");
+        double ratio = 100.0;
+        if (diffFrame != null && diffRoot.total > 0 && root.total > 0) {
+            long diffTotal = frame.total - diffFrame.total * root.total / diffRoot.total;
+            ratio = diffTotal * 1.0 / root.total * 100;
+        }
+        String ratioStr = decimalFormat.format(ratio);
+        out.println("f(" + level + "," + x + "," + frame.total + "," + type + ",'" + title + "'," + ratioStr + ")");
 
         x += frame.self;
         for (Map.Entry<String, Frame> e : frame.entrySet()) {
             Frame child = e.getValue();
             if (child.total >= mintotal) {
-                printFrame(out, e.getKey(), child, level + 1, x);
+                Frame diffChild = null;
+                if (diffFrame != null && diffFrame.containsKey(e.getKey())) {
+                    diffChild = diffFrame.get(e.getKey());
+                }
+                printFrame(out, e.getKey(), child, level + 1, x, diffChild);
             }
             x += child.total;
         }
@@ -210,24 +266,25 @@ public class FlameGraph {
     public static void main(String[] args) throws IOException {
 
         // example
-        /* args = new String[6];
+        /* args = new String[7];
         args[0] = "--title";
-        args[1] = "Kylin Profiler FlameGraph";
-        args[2] = "--uber";
-        args[3] = "true";
-        args[4] = "/data1/uber-jvm-profiler/kylin-profiler/flamegraph-uber.log";
-        args[5] = "/data1/uber-jvm-profiler/kylin-profiler/flamegraph-uber.html"; */
+        args[1] = "Diff FlameGraph";
+        args[2] = "--colorThreshold";
+        args[3] = "1.0";
+        args[4] = "/data1/uber-jvm-profiler/kylin-profiler/spark31soft-executor-1.log";
+        args[5] = "/data1/uber-jvm-profiler/kylin-profiler/spark31soft-executor-0.log";
+        args[6] = "/home/myubuntu/Works/IdeaProjects/jvm-profiler/spark31soft-executor-0-1.html"; */
 
-        FlameGraph fg = new FlameGraph(args);
-        if (fg.input == null) {
-            System.out.println("Usage: java " + FlameGraph.class.getName() + " [options] input.collapsed [output.html]");
+        DiffFlameGraph fg = new DiffFlameGraph(args);
+        if (fg.input == null || fg.diffInput == null) {
+            System.out.println("Usage: java " + DiffFlameGraph.class.getName() + " [options] " +
+                    "diff.input.collapsed input.collapsed [output.html]");
             System.out.println();
             System.out.println("Options:");
             System.out.println("  --title TITLE");
-            System.out.println("  --reverse");
             System.out.println("  --minwidth PERCENT");
             System.out.println("  --skip FRAMES");
-            System.out.println("  --uber true or false, default is false");
+            System.out.println("  --colorThreshold default is 5.0");
             System.exit(1);
         }
 
@@ -238,6 +295,7 @@ public class FlameGraph {
     static class Frame extends TreeMap<String, Frame> {
         long total;
         long self;
+        double diff;
 
         Frame child(String title) {
             Frame child = get(title);
@@ -281,6 +339,7 @@ public class FlameGraph {
             "\tvar root, rootLevel, px, pattern;\n" +
             "\tvar reverse = ${reverse};\n" +
             "\tconst levels = Array(${depth});\n" +
+            "\tconst colorThreshold = ${colorThreshold};\n" +
             "\tfor (let h = 0; h < levels.length; h++) {\n" +
             "\t\tlevels[h] = [];\n" +
             "\t}\n" +
@@ -306,13 +365,23 @@ public class FlameGraph {
             "\t\t[0xe15a5a, 30, 40, 40],\n" +
             "\t];\n" +
             "\n" +
-            "\tfunction getColor(p) {\n" +
-            "\t\tconst v = Math.random();\n" +
-            "\t\treturn '#' + (p[0] + ((p[1] * v) << 16 | (p[2] * v) << 8 | (p[3] * v))).toString(16);\n" +
+            "\tfunction getColor(r) {\n" +
+            "\t\tif (r === 100) {\n" +
+            "\t\t\treturn '#ecac0d';\n" +
+            "\t\t} else if (r > colorThreshold) {\n" +
+            "\t\t\treturn '#ff0000';\n" +
+            "\t\t} else if (r > 0.0) {\n" +
+            "\t\t\treturn '#f64b4b';\n" +
+            "\t\t} else if (r < -colorThreshold) {\n" +
+            "\t\t\treturn '#0e75cb';\n" +
+            "\t\t} else if (r < 0.0) {\n" +
+            "\t\t\treturn '#00BFFF';\n" +
+            "\t\t}\n" +
+            "\t\treturn '#228B22';\n" +
             "\t}\n" +
             "\n" +
-            "\tfunction f(level, left, width, type, title) {\n" +
-            "\t\tlevels[level].push({left: left, width: width, color: getColor(palette[type]), title: title});\n" +
+            "\tfunction f(level, left, width, type, title, ratio) {\n" +
+            "\t\tlevels[level].push({left: left, width: width, color: getColor(ratio), title: title, ratio: ratio});\n" +
             "\t}\n" +
             "\n" +
             "\tfunction samples(n) {\n" +
@@ -427,7 +496,7 @@ public class FlameGraph {
             "\t\t\t\thl.style.top = ((reverse ? h * 16 : canvasHeight - (h + 1) * 16) + canvas.offsetTop) + 'px';\n" +
             "\t\t\t\thl.firstChild.textContent = f.title;\n" +
             "\t\t\t\thl.style.display = 'block';\n" +
-            "\t\t\t\tcanvas.title = f.title + '\\n(' + samples(f.width) + ', ' + pct(f.width, levels[0][0].width) + '%)';\n" +
+            "\t\t\t\tcanvas.title = f.title + '\\n(' + samples(f.width) + ', ' + pct(f.width, levels[0][0].width) + '%, ' + f.ratio + '%)';\n" +
             "\t\t\t\tcanvas.style.cursor = 'pointer';\n" +
             "\t\t\t\tcanvas.onclick = function() {\n" +
             "\t\t\t\t\tif (f != root) {\n" +

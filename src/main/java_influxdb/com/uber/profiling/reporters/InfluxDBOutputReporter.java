@@ -63,11 +63,14 @@ public class InfluxDBOutputReporter implements Reporter {
         } */
         String processIdTag = metrics.containsKey("tag") ? (String)metrics.get("tag") :
                 (String)metrics.get("processUuid");
+        String asyncTag = metrics.containsKey("asyncTag") ? (String)metrics.get("asyncTag") :
+                processIdTag;
         // Point
         Point point = Point.measurement(profilerName)
                 .time(System.currentTimeMillis(), TimeUnit.MILLISECONDS)
                 .fields(formattedMetrics)
                 .tag("processIdTag", processIdTag)
+                .tag("asyncTag", asyncTag)
                 .build();
         // BatchPoints
         BatchPoints batchPoints = BatchPoints.database(database)

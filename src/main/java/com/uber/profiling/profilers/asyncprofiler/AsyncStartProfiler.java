@@ -55,6 +55,9 @@ public class AsyncStartProfiler extends ProfilerBase implements Profiler {
     private String flagMeasurement = "flag";
 
     private String asyncParams = "";
+    private String newAsyncParams = "";
+    private String asyncTag = "";
+    private String newAsyncTag = "";
 
     public AsyncStartProfiler(Reporter reporter) {
         setReporter(reporter);
@@ -102,6 +105,10 @@ public class AsyncStartProfiler extends ProfilerBase implements Profiler {
                         map.put("name", getProcessName());
                         map.put("processUuid", getProcessUuid());
                         map.put("appId", getAppId());
+
+                        if (StringUtils.isNotBlank(this.asyncTag)) {
+                            map.put("asyncTag", this.asyncTag);
+                        }
                         if (getTag() != null) {
                             map.put("tag", getTag());
                         }
@@ -113,6 +120,8 @@ public class AsyncStartProfiler extends ProfilerBase implements Profiler {
                 }
 
                 // re-start async profiler
+                this.asyncParams = this.newAsyncParams;
+                this.asyncTag = this.newAsyncTag;
                 AsyncProfiler.getInstance().start(this.asyncParams);
                 isRunning.set(true);
 
@@ -135,7 +144,7 @@ public class AsyncStartProfiler extends ProfilerBase implements Profiler {
     private boolean checkNeedToRunAsyncProfiler() {
         QueryResult queryResult =
                 this.influxDB.query(
-                        new Query("select value from " + flagMeasurement, database));
+                        new Query("select value,asyncparams,asynctag from " + flagMeasurement, database));
 
         if (queryResult == null || queryResult.getResults().isEmpty()) {
             return false;
@@ -152,6 +161,15 @@ public class AsyncStartProfiler extends ProfilerBase implements Profiler {
         }
 
         Double flagValue = Double.valueOf(series.getValues().get(0).get(1).toString());
+        if (series.getValues().get(0).get(2) != null) {
+            this.newAsyncParams =
+                    series.getValues().get(0).get(2).toString().replaceAll(Arguments.ARG_ASYNC_PROFILER_SEPARATOR1,
+                            ",").replaceAll(Arguments.ARG_ASYNC_PROFILER_SEPARATOR2, "=");
+        }
+        if (series.getValues().get(0).get(3) != null) {
+            this.newAsyncTag =
+                    series.getValues().get(0).get(3).toString();
+        }
 
         if (flagValue == 0.0) {
             return false;
@@ -226,7 +244,7 @@ public class AsyncStartProfiler extends ProfilerBase implements Profiler {
         // InfluxDBOutputReporter  ConsoleOutputReporter
         String argumentStr = "configProvider=com.uber.profiling.util" +
                 ".DummyConfigProvider,reporter=com.uber.profiling.reporters" +
-                ".ConsoleOutputReporter,tag=mytag,appIdVariable=XXXX," +
+                ".InfluxDBOutputReporter,tag=mytag,appIdVariable=spark31soft," +
                 "metricInterval=200,durationProfiling=com.uber.profiling.examples" +
                 ".HelloWorldApplication.publicSleepMethod,argumentProfiling=com.uber" +
                 ".profiling.examples.HelloWorldApplication.publicSleepMethod.1," +
@@ -246,8 +264,17 @@ public class AsyncStartProfiler extends ProfilerBase implements Profiler {
         asyncStartProfiler.setAsyncParams(arguments.getAsyncProfilerParams());
         asyncStartProfiler.updateArguments(arguments.getRawArgValues());
         asyncStartProfiler.profile();
-        Thread.sleep(30000);
-        asyncStartProfiler.profile();
+        for (int i = 0; i < 1000; i++) {
+            long cnt = 0;
+            while (true) {
+                Thread.sleep(10);
+                cnt += 10;
+                if (cnt > 30000) {
+                    break;
+                }
+            }
+            asyncStartProfiler.profile();
+        }
         asyncStartProfiler.close();
     }
 }
