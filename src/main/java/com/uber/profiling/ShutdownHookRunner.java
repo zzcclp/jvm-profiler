@@ -16,8 +16,10 @@
 
 package com.uber.profiling;
 
+import com.uber.profiling.profilers.asyncprofiler.AsyncProfiler;
 import com.uber.profiling.util.AgentLogger;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
@@ -74,7 +76,11 @@ public class ShutdownHookRunner implements Runnable {
             }
         }
 
-        // new File(AsyncProfiler.getInstance().getCurrLibPath()).deleteOnExit();
+        try {
+            new File(AsyncProfiler.getInstance().getCurrLibPath()).delete();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     private void logShutdownMessage(String msg) {

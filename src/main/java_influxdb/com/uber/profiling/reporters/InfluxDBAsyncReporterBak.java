@@ -1,10 +1,7 @@
 package com.uber.profiling.reporters;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.TimeUnit;
-
+import com.uber.profiling.Reporter;
+import com.uber.profiling.util.AgentLogger;
 import okhttp3.OkHttpClient;
 import org.apache.commons.lang3.StringUtils;
 import org.influxdb.InfluxDB;
@@ -13,8 +10,14 @@ import org.influxdb.InfluxDBFactory;
 import org.influxdb.dto.BatchPoints;
 import org.influxdb.dto.Point;
 
-import com.uber.profiling.Reporter;
-import com.uber.profiling.util.AgentLogger;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.InputStreamReader;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Metrics reporter class for InfluxDB. Database name "metrics" is used by this
@@ -40,9 +43,9 @@ import com.uber.profiling.util.AgentLogger;
  *     reporter=com.uber.profiling.reporters.InfluxDBOutputReporter,configProvider=com.uber.profiling.YamlConfigProvider,configFile=/opt/influxdb.yaml
  *
  */
-public class InfluxDBOutputReporter implements Reporter {
+public class InfluxDBAsyncReporterBak implements Reporter {
 
-    private static final AgentLogger logger = AgentLogger.getLogger(InfluxDBOutputReporter.class.getName());
+    private static final AgentLogger logger = AgentLogger.getLogger(InfluxDBAsyncReporterBak.class.getName());
     private InfluxDB influxDB = null;
     // InfluxDB default connection properties
     private String host = "127.0.0.1";
@@ -50,6 +53,9 @@ public class InfluxDBOutputReporter implements Reporter {
     private String database = "metrics";
     private String username = "admin";
     private String password = "admin";
+
+    private final static int BUFF_SIZE = 10 << 20;
+    private final static int INFLUXDB_SIZE = 5 << 20;
 
     @Override
     public void report(String profilerName, Map<String, Object> metrics) {
@@ -65,24 +71,61 @@ public class InfluxDBOutputReporter implements Reporter {
                 processIdTag;
 
         try {
-            // Point
-            Point point = Point.measurement(profilerName)
-                    .time(System.currentTimeMillis(), TimeUnit.MILLISECONDS)
-                    .fields(formattedMetrics)
-                    .tag("processIdTag", processIdTag)
-                    .tag("asyncTag", asyncTag)
-                    .build();
-            // BatchPoints
-            BatchPoints batchPoints = BatchPoints.database(database)
-                    .consistency(ConsistencyLevel.ONE)
-                    .retentionPolicy("autogen")
-                    .build();
-            batchPoints.point(point);
-            // Write
-            this.influxDB.write(batchPoints);
+            File stacktraceFile = new File(formattedMetrics.get("stacktraceFile").toString());
+            if (!stacktraceFile.exists() || !stacktraceFile.isFile()) {
+                return;
+            }
+            System.out.println("File " + stacktraceFile.getAbsolutePath() + " size is: " +
+                    stacktraceFile.length());
+            formattedMetrics.remove("stacktraceFile");
+            FileInputStream fis = new FileInputStream(stacktraceFile);
+            BufferedReader reader = new BufferedReader(new InputStreamReader(fis, "utf-8"),
+                    BUFF_SIZE);
+
+            long startTime = System.currentTimeMillis();
+            StringBuffer stacktraceBuf = new StringBuffer();
+            while (reader.ready()) {
+                stacktraceBuf.append(reader.readLine());
+                if (stacktraceBuf.length() > INFLUXDB_SIZE) {
+                    formattedMetrics.put("stacktrace", stacktraceBuf.toString());
+                    reportToInfluxdb(profilerName, formattedMetrics, processIdTag, asyncTag);
+                    System.out.println("Send stack took: " +
+                            (System.currentTimeMillis() - startTime));
+                    startTime = System.currentTimeMillis();
+                    stacktraceBuf = new StringBuffer();
+                }
+            }
+            if (stacktraceBuf.length() > 0) {
+                formattedMetrics.put("stacktrace", stacktraceBuf.toString());
+                reportToInfluxdb(profilerName, formattedMetrics, processIdTag, asyncTag);
+                System.out.println("Send stack took: " + (System.currentTimeMillis() - startTime));
+            }
+            stacktraceBuf = null;
+            fis.close();
+            reader.close();
+            stacktraceFile.delete();
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    private void reportToInfluxdb(String profilerName, Map<String, Object> formattedMetrics,
+                                  String processIdTag, String asyncTag) {
+        // BatchPoints
+        BatchPoints batchPoints = BatchPoints.database(database)
+                .consistency(ConsistencyLevel.ONE)
+                .retentionPolicy("autogen")
+                .build();
+        // Point
+        Point point = Point.measurement(profilerName)
+                .time(System.currentTimeMillis(), TimeUnit.MILLISECONDS)
+                .fields(formattedMetrics)
+                .tag("processIdTag", processIdTag)
+                .tag("asyncTag", asyncTag)
+                .build();
+        batchPoints.point(point);
+        // Write
+        this.influxDB.write(batchPoints);
     }
 
     // Format metrics in key=value (line protocol)
@@ -159,7 +202,7 @@ public class InfluxDBOutputReporter implements Reporter {
                     .writeTimeout(1, TimeUnit.MINUTES)
                     .retryOnConnectionFailure(true);
             this.influxDB = InfluxDBFactory.connect(url, username, password, clientBuilder)
-                    .enableBatch(100, 1000, TimeUnit.MILLISECONDS)
+                    .enableBatch(100, 5000, TimeUnit.MILLISECONDS)
                     .enableGzip()
                     .setLogLevel(InfluxDB.LogLevel.NONE);
         }

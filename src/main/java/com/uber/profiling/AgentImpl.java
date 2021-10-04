@@ -28,6 +28,7 @@ import com.uber.profiling.profilers.StacktraceReporterProfiler;
 import com.uber.profiling.profilers.ThreadInfoProfiler;
 import com.uber.profiling.profilers.asyncprofiler.AsyncProfiler;
 import com.uber.profiling.profilers.asyncprofiler.AsyncStartProfiler;
+import com.uber.profiling.reporters.InfluxDBAsyncReporter;
 import com.uber.profiling.transformers.JavaAgentFileTransformer;
 import com.uber.profiling.transformers.MethodProfilerStaticProxy;
 import com.uber.profiling.util.AgentLogger;
@@ -51,11 +52,11 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 public class AgentImpl {
-    public static final String VERSION = "1.1.1";
+    public static final String VERSION = "1.2.0";
     
     private static final AgentLogger logger = AgentLogger.getLogger(AgentImpl.class.getName());
 
-    private static final int MAX_THREAD_POOL_SIZE = 2;
+    private static final int MAX_THREAD_POOL_SIZE = 6;
 
     private boolean started = false;
 
@@ -66,6 +67,8 @@ public class AgentImpl {
         }
         
         Reporter reporter = arguments.getReporter();
+        Reporter asyncReproter = new InfluxDBAsyncReporter();
+        asyncReproter.updateArguments(arguments.getRawArgValues());
 
         String processUuid = UUID.randomUUID().toString();
 
@@ -106,11 +109,14 @@ public class AgentImpl {
             });
         }
 
-        List<Profiler> profilers = createProfilers(reporter, arguments, processUuid, appId);
+        List<Profiler> profilers = createProfilers(reporter, asyncReproter, arguments, processUuid
+                , appId);
         
         ProfilerGroup profilerGroup = startProfilers(profilers);
 
-        Thread shutdownHook = new Thread(new ShutdownHookRunner(profilerGroup.getPeriodicProfilers(), Arrays.asList(reporter), objectsToCloseOnShutdown));
+        Thread shutdownHook = new Thread(new ShutdownHookRunner(
+                profilerGroup.getPeriodicProfilers(), Arrays.asList(reporter, asyncReproter),
+                objectsToCloseOnShutdown));
         Runtime.getRuntime().addShutdownHook(shutdownHook);
     }
 
@@ -157,7 +163,8 @@ public class AgentImpl {
         return new ProfilerGroup(oneTimeProfilers, periodicProfilers);
     }
 
-    private List<Profiler> createProfilers(Reporter reporter, Arguments arguments, String processUuid, String appId) {
+    private List<Profiler> createProfilers(Reporter reporter, Reporter asyncReporter,
+                                           Arguments arguments, String processUuid, String appId) {
         String tag = arguments.getTag();
         String cluster = arguments.getCluster();
         long metricInterval = arguments.getMetricInterval();
@@ -245,7 +252,7 @@ public class AgentImpl {
         if (arguments.getAsyncProfilerSamplingInterval() > 0) {
             // init AsyncProfiler and load so file
             AsyncProfiler.getInstance(arguments.getAsyncProfilerLibPath());
-            AsyncStartProfiler asyncStartProfiler = new AsyncStartProfiler(reporter);
+            AsyncStartProfiler asyncStartProfiler = new AsyncStartProfiler(asyncReporter);
             asyncStartProfiler.setTag(tag);
             asyncStartProfiler.setCluster(cluster);
             asyncStartProfiler.setIntervalMillis(arguments.getAsyncProfilerSamplingInterval());

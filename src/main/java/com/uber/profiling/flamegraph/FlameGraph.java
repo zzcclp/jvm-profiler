@@ -32,9 +32,9 @@ import java.util.regex.Pattern;
 
 public class FlameGraph {
     public String title = "Flame Graph";
-    public boolean reverse;
-    public double minwidth;
-    public int skip;
+    public boolean reverse = false;
+    public double minwidth = 0.0;
+    public int skip = 0;
     public String input;
     public String output;
     public boolean isUberData = false;
@@ -43,7 +43,14 @@ public class FlameGraph {
     private int depth;
     private long mintotal;
 
+    public FlameGraph() {
+    }
+
     public FlameGraph(String... args) {
+        parseArgs(args);
+    }
+
+    public void parseArgs(String... args) {
         for (int i = 0; i < args.length; i++) {
             String arg = args[i];
             if (!arg.startsWith("--") && !arg.isEmpty()) {
@@ -210,16 +217,20 @@ public class FlameGraph {
     public static void main(String[] args) throws IOException {
 
         // example
-        /* args = new String[6];
+        /* args = new String[4];
         args[0] = "--title";
         args[1] = "Kylin Profiler FlameGraph";
-        args[2] = "--uber";
-        args[3] = "true";
-        args[4] = "/data1/uber-jvm-profiler/kylin-profiler/flamegraph-uber.log";
-        args[5] = "/data1/uber-jvm-profiler/kylin-profiler/flamegraph-uber.html"; */
+        //args[2] = "--uber";
+        //args[3] = "true";
+        args[2] = "/data1/uber-jvm-profiler/kylin-profiler/flamegraph.log";
+        args[3] = "/data1/uber-jvm-profiler/kylin-profiler/flamegraph.html"; */
 
         FlameGraph fg = new FlameGraph(args);
-        if (fg.input == null) {
+        fg.parseAndDump();
+    }
+
+    public void parseAndDump() throws IOException {
+        if (this.input == null) {
             System.out.println("Usage: java " + FlameGraph.class.getName() + " [options] input.collapsed [output.html]");
             System.out.println();
             System.out.println("Options:");
@@ -231,8 +242,8 @@ public class FlameGraph {
             System.exit(1);
         }
 
-        fg.parse();
-        fg.dump();
+        parse();
+        dump();
     }
 
     static class Frame extends TreeMap<String, Frame> {

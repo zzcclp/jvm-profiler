@@ -39,15 +39,15 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-public class AsyncStartProfiler extends ProfilerBase implements Profiler {
+public class AsyncStartProfilerBak extends ProfilerBase implements Profiler {
     public final static String PROFILER_NAME = "AsyncProfiler";
 
-    private static final AgentLogger logger = AgentLogger.getLogger(AsyncStartProfiler.class.getName());
+    private static final AgentLogger logger = AgentLogger.getLogger(AsyncStartProfilerBak.class.getName());
     private final static long RUNNING_TIMEOUT = 1800000L;
 
     private long intervalMillis = 60000l;
 
-    private AtomicBoolean alreadyRan = new AtomicBoolean(false);
+    private AtomicBoolean isRunning = new AtomicBoolean(false);
 
     private Reporter reporter;
 
@@ -66,12 +66,13 @@ public class AsyncStartProfiler extends ProfilerBase implements Profiler {
     private String newAsyncParams = "";
     private String asyncTag = "";
     private String newAsyncTag = "";
-    private long asyncduration = 600000L;
     private List<String> targetHosts = new ArrayList<>();
+
+    private long lastRunningTime = System.currentTimeMillis();
 
     private ExecutorService reporterExecutorService = Executors.newFixedThreadPool(2);
 
-    public AsyncStartProfiler(Reporter reporter) {
+    public AsyncStartProfilerBak(Reporter reporter) {
         setReporter(reporter);
         init();
     }
@@ -107,41 +108,21 @@ public class AsyncStartProfiler extends ProfilerBase implements Profiler {
         // if need to run async profiler
         if (checkNeedToRunAsyncProfiler()) {
             try {
-                if (alreadyRan.get()) {
-                    System.out.println("Please stop AsyncProfiler first and then re-run it.");
+                // the max time to run async profiler
+                if ((System.currentTimeMillis() - lastRunningTime) > RUNNING_TIMEOUT) {
+                    System.out.println("The execution time of AsyncProfiler exceeds 30 mins.");
+                    AsyncProfiler.getInstance().stop();
+                    isRunning.set(false);
                     return;
                 }
-                alreadyRan.getAndSet(true);
                 String dumpResultStr = null;
-
-                // re-start async profiler
-                if (StringUtils.isBlank(this.newAsyncParams)) {
-                    this.asyncParams = this.defaultAsyncParams;
-                } else {
-                    this.asyncParams = this.newAsyncParams;
-                }
-                this.asyncTag = this.newAsyncTag;
-
-                if (this.asyncParams.indexOf("collapsed") != -1) {
-                    this.asyncParams = this.asyncParams.replaceAll("collapsed", "flamegraph");
-                }
-
-                File outputFile = File.createTempFile("AsyncProfiler", ".html");
-                String asyncProfilerParams =
-                        this.asyncParams + ",file=" + outputFile.getAbsolutePath() +
-                        ",title=" + this.asyncTag + "-Flame-Graph";
-                AsyncProfiler.getInstance().start(asyncProfilerParams);
-                long sleepTime = 0;
-                while (sleepTime < this.asyncduration) {
-                    Thread.sleep(10000L);
-                    System.out.println("Capture FlameGraph Data ...");
-                    sleepTime += 10000L;
-                }
                 if (AsyncProfiler.getInstance().getStatus()) {
+                    File outputFile = File.createTempFile("AsyncProfiler", ".collapsed");
+                    // async profiler is running and then dump the results
                     long startTime = System.currentTimeMillis();
-                    dumpResultStr = AsyncProfiler.getInstance().execute(asyncProfilerParams);
-                    System.out.println("Dump stack took: " +
-                            (System.currentTimeMillis() - startTime));
+                    dumpResultStr = AsyncProfiler.getInstance().execute(this.asyncParams +
+                            ",file=" + outputFile.getAbsolutePath());
+                    System.out.println("Dump stack took: " + (System.currentTimeMillis() - startTime));
                     if (StringUtils.isNotBlank(dumpResultStr) && dumpResultStr.equals("OK")) {
                         final Map<String, Object> map = new HashMap<>();
                         map.put("host", getHostName());
@@ -167,13 +148,24 @@ public class AsyncStartProfiler extends ProfilerBase implements Profiler {
                         }
                     }
                 }
+
+                // re-start async profiler
+                if (StringUtils.isBlank(this.newAsyncParams)) {
+                    this.asyncParams = this.defaultAsyncParams;
+                } else {
+                    this.asyncParams = this.newAsyncParams;
+                }
+                this.asyncTag = this.newAsyncTag;
+                AsyncProfiler.getInstance().start(this.asyncParams);
+                isRunning.set(true);
             } catch (Exception e) {
                 logger.warn("Async profiler execute error: ", e);
             }
         } else {
             try {
                 AsyncProfiler.getInstance().stop();
-                alreadyRan.getAndSet(false);
+                isRunning.set(false);
+                lastRunningTime = System.currentTimeMillis();
             } catch (Exception e) {
                 logger.warn("Executor async profiler stop error: ", e);
             }
@@ -184,7 +176,7 @@ public class AsyncStartProfiler extends ProfilerBase implements Profiler {
         try {
             QueryResult queryResult =
                     this.influxDB.query(
-                            new Query("select value,asyncparams,asynctag,targetHosts,asyncduration from " +
+                            new Query("select value,asyncparams,asynctag,targetHosts from " +
                                     flagMeasurement, database));
 
             if (queryResult == null || queryResult.getResults().isEmpty()) {
@@ -213,20 +205,13 @@ public class AsyncStartProfiler extends ProfilerBase implements Profiler {
                 this.newAsyncTag =
                         series.getValues().get(0).get(3).toString();
             } else {
-                this.newAsyncTag = String.valueOf(System.currentTimeMillis());
+                this.newAsyncTag = "";
             }
             if (series.getValues().get(0).get(4) != null) {
                 this.targetHosts = Arrays.asList(
                         series.getValues().get(0).get(4).toString().split(","));
             } else {
                 this.targetHosts.clear();
-            }
-            if (series.getValues().get(0).get(5) != null) {
-                this.asyncduration =
-                        Long.parseLong(series.getValues().get(0).get(5).toString()) * 1000L;
-                this.asyncduration = Math.min(this.asyncduration, RUNNING_TIMEOUT);
-            } else {
-                this.asyncduration = 600000L;
             }
 
             if (flagValue == 0.0) {
@@ -321,7 +306,7 @@ public class AsyncStartProfiler extends ProfilerBase implements Profiler {
         AsyncProfiler.getInstance(arguments.getAsyncProfilerLibPath());
         InfluxDBAsyncReporter reporter = new InfluxDBAsyncReporter();
         reporter.updateArguments(arguments.getRawArgValues());
-        AsyncStartProfiler asyncStartProfiler = new AsyncStartProfiler(reporter);
+        AsyncStartProfilerBak asyncStartProfiler = new AsyncStartProfilerBak(reporter);
 
         asyncStartProfiler.setTag(arguments.getTag());
         asyncStartProfiler.setCluster(arguments.getCluster());
